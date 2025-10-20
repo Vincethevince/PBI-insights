@@ -1,7 +1,11 @@
 # In a file like 'measure.py'
 
-from typing import Optional, Set
+from typing import Optional, Set, TYPE_CHECKING
 from enum import Enum
+
+if TYPE_CHECKING:
+    from .report import Report
+    from .visual import Visual
 
 class UsageState(Enum):
     """Represents the usage status of a measure."""
@@ -30,6 +34,7 @@ class Measure:
             expression: The raw DAX expression for the measure.
             report: A back-reference to the parent Report object that contains this measure.
         """
+        # --- Core Attributes ---
         self.name: str = name
         self.entity_name: str = entity_name
         self.expression: str = expression
@@ -45,7 +50,7 @@ class Measure:
 
         # --- Dependencies (What this measure USES) ---
         self.referenced_measures: Set['Measure'] = set()
-        self.referenced_columns: Set['CalculatedColumn'] = set()
+        #self.referenced_columns: Set['CalculatedColumn'] = set()
 
         # --- Dependents (Where this measure IS USED) ---
         self.referenced_by_measures: Set['Measure'] = set()

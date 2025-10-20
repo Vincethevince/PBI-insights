@@ -61,7 +61,7 @@ class Unzipper:
         except zipfile.BadZipFile:
             logging.error(
                 f"Could not extract '{file_path.name}'. It may be corrupt or have a high security level. "
-                "Consider extracting it manually."
+                "Consider lowering the security level or extracting it manually."
             )
         except Exception as e:
             logging.error(f"An unexpected error occurred while extracting '{file_path.name}': {e}")
