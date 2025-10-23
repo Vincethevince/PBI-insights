@@ -33,10 +33,10 @@ class Page:
         self.config: Dict[str, Any] = json.loads(config_str) if config_str else {}
 
         # --- Parent Reference ---
-        self.report: 'Report' = report
+        self.report: Report = report
 
         # --- Contained Objects (to be populated by the Report parser) ---
-        self.visuals: List['Visual'] = []
+        self.visuals: List[Visual] = []
 
         # --- Page-level Filters ---
         # The 'filters' attribute is a JSON string that needs to be parsed.
@@ -47,18 +47,18 @@ class Page:
         """Provides a developer-friendly string representation of the Page object."""
         return f"Page(name='{self.name}', ordinal={self.ordinal}, visuals={len(self.visuals)})"
 
-    def add_visual(self, visual: 'Visual'):
+    def add_visual(self, visual: Visual):
         """Adds a visual to this page's collection of visuals."""
         self.visuals.append(visual)
 
-    def get_used_measures(self) -> Set['Measure']:
+    def get_used_measures(self) -> Set[Measure]:
         """
         Aggregates and returns a unique set of all measures used across all visuals on this page.
 
         Returns:
             A set of unique Measure objects used on this page.
         """
-        page_measures: Set['Measure'] = set()
+        page_measures: Set[Measure] = set()
         for visual in self.visuals:
-            page_measures.update(visual.used_measures)
+            page_measures.update(visual.used_fields)
         return page_measures

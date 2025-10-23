@@ -2,12 +2,13 @@ import json
 from typing import Optional, Dict, Any, Set, TYPE_CHECKING
 if TYPE_CHECKING:
     from .measure import Measure
+    from .page import Page
 
 
 class Visual:
     """Represents a single visual on a Power BI report page."""
 
-    def __init__(self, container: Dict[str, Any], page: 'Page'):
+    def __init__(self, container: Dict[str, Any], page: Page):
         """
         Initializes a Visual object from its JSON container.
 
@@ -23,7 +24,7 @@ class Visual:
         self.height: Optional[float] = container.get("height")
 
         # --- Parent Reference ---
-        self.page: 'Page' = page
+        self.page: Page = page
 
         # --- Core Data ---
         # These are JSON strings that need to be parsed.
@@ -39,8 +40,10 @@ class Visual:
         # --- Parsed Information (to be populated later) ---
         self.id: str = self.config.get("name", "")
         self.type: str = self.config.get("singleVisual", {}).get("visualType", "Unknown")
-        self.used_measures: Set['Measure'] = set()
-        self.used_columns: Set['CalculatedColumn'] = set()
+        #self.used_measures: Set[Measure] = set()
+        #self.used_columns: Set['CalculatedColumn'] = set()
+        self.used_fields: Set[str] = set()
 
     def __repr__(self) -> str:
         return f"Visual(id='{self.id}', type='{self.type}', page='{self.page.name}')"
+
