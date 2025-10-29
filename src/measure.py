@@ -1,11 +1,10 @@
-# In a file like 'measure.py'
-
+from __future__ import annotations
 from typing import Optional, Set, TYPE_CHECKING
 from enum import Enum
-
+#from report import Report
 if TYPE_CHECKING:
     from .report import Report
-    from .visual import Visual
+    from .page import Page
 
 class UsageState(Enum):
     """Represents the usage status of a measure."""
@@ -24,7 +23,7 @@ class UsageState(Enum):
 class Measure:
     """Represents a single, hashable DAX measure."""
 
-    def __init__(self, name: str, entity_name: str, expression: str, report: 'Report'):
+    def __init__(self, name: str, entity_name: str, expression: str, report: Report):
         """
         Initializes a new Measure object.
 
@@ -38,7 +37,7 @@ class Measure:
         self.name: str = name
         self.entity_name: str = entity_name
         self.expression: str = expression
-        self.report: 'Report' = report
+        self.report: Report = report
 
         # --- Metadata ---
         self.author: Optional[str] = None
@@ -49,17 +48,17 @@ class Measure:
         self.usage_state: UsageState = UsageState.UNREFERENCED
 
         # --- Dependencies (What this measure USES) ---
-        self.referenced_measures: Set['Measure'] = set()
+        self.referenced_measures: Set[str] = set()
         #self.referenced_columns: Set['CalculatedColumn'] = set()
 
         # --- Dependents (Where this measure IS USED) ---
-        self.referenced_by_measures: Set['Measure'] = set()
-        self.used_in_visuals: Set['Visual'] = set()
+        self.referenced_by_measures: Set[Measure] = set()
+        self.used_in_pages: Set[Page] = set()
 
     @property
     def full_name(self) -> str:
         """Returns the fully qualified name, e.g., 'Sales'[Revenue]."""
-        return f"'{self.entity_name}'[{self.name}]"
+        return f"{self.entity_name}[{self.name}]"
 
     def __eq__(self, other) -> bool:
         """Two measures are equal if they have the same name and belong to the same entity."""
@@ -69,7 +68,7 @@ class Measure:
 
     def __hash__(self) -> int:
         """The hash is based on the unique combination of entity name and measure name."""
-        return hash((self.entity_name, self.name))
+        return hash(self.full_name)
 
     def __repr__(self) -> str:
         return f"Measure(full_name={self.full_name})"

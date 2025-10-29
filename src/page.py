@@ -1,16 +1,18 @@
+from __future__ import annotations
 import json
 from typing import List, Dict, Any, Optional, TYPE_CHECKING, Set
+from utils import _recursive_find_fields
+from visual import Visual
 
 if TYPE_CHECKING:
     from .report import Report
-    from .visual import Visual
     from .measure import Measure
 
 
 class Page:
     """Represents a single page (or 'section') within a Power BI report."""
 
-    def __init__(self, section_data: Dict[str, Any], report: 'Report'):
+    def __init__(self, section_data: Dict[str, Any], report: Report):
         """
         Initializes a Page object from its JSON section data.
 
@@ -32,33 +34,69 @@ class Page:
         config_str: Optional[str] = section_data.get("config")
         self.config: Dict[str, Any] = json.loads(config_str) if config_str else {}
 
-        # --- Parent Reference ---
-        self.report: Report = report
-
-        # --- Contained Objects (to be populated by the Report parser) ---
-        self.visuals: List[Visual] = []
-
         # --- Page-level Filters ---
         # The 'filters' attribute is a JSON string that needs to be parsed.
         filters_str: Optional[str] = section_data.get("filters")
         self.filters: List[Dict[str, Any]] = json.loads(filters_str) if filters_str else []
 
+        # --- Parent Reference ---
+        self.report: Report = report
+
+        # --- Contained Objects ---
+        self.visuals: List[Visual] = []
+        self._load_visuals(section_data)
+        self.used_fields: Set[str] = set()
+        self._find_used_fields()
+        self._reformat_used_fields()
+        self.used_measures: Set[Measure] = set()
+
+    def _load_visuals(self, section_data: Dict[str, Any]):
+        """Parses visual containers from section data and populates self.visuals."""
+        visual_containers = section_data.get("visualContainers",[])
+        if not visual_containers:
+            return
+
+        for container in visual_containers:
+            visual = Visual(container, self)
+            self.visuals.append(visual)
+
+
+    def _find_used_fields(self):
+        """
+        Aggregates and saves a unique set of all measures used across all visuals on this page.
+        """
+
+        for visual in self.visuals:
+            if 'Min(data_combo_distr[Team)]' in visual.used_fields:
+                print()
+            self.used_fields.update(visual.used_fields)
+
+        if self.filters:
+            self.used_fields.update(_recursive_find_fields(self.filters))
+            if 'Min(data_combo_distr[Team)]' in self.used_fields:
+                print()
+
+    def _reformat_used_fields(self):
+        """
+        Converts field names from 'Entity.Property' format to 'Entity[Property]'.
+
+        This standardizes the format for easier lookups against the report's
+        central measures dictionary, which uses the 'Entity[Property]' format as keys.
+        """
+        reformatted = set()
+        for field in self.used_fields:
+            parts = field.split('.', 1)
+            if len(parts) == 2:
+                reformatted.add(f"{parts[0]}[{parts[1]}]")
+            else:
+                print(f"We have a wrong field format with {field}")
+        self.used_fields = reformatted
+
+
     def __repr__(self) -> str:
         """Provides a developer-friendly string representation of the Page object."""
         return f"Page(name='{self.name}', ordinal={self.ordinal}, visuals={len(self.visuals)})"
 
-    def add_visual(self, visual: Visual):
-        """Adds a visual to this page's collection of visuals."""
-        self.visuals.append(visual)
-
-    def get_used_measures(self) -> Set[Measure]:
-        """
-        Aggregates and returns a unique set of all measures used across all visuals on this page.
-
-        Returns:
-            A set of unique Measure objects used on this page.
-        """
-        page_measures: Set[Measure] = set()
-        for visual in self.visuals:
-            page_measures.update(visual.used_fields)
-        return page_measures
+    def __hash__(self) -> int:
+        """The hash is based on the unique combination of page's name and ordinal."""
+        return hash((self.ordinal, self.name))
