@@ -19,8 +19,6 @@ def _recursive_find_fields(data_object: Any) -> Set[str]:
     if isinstance(data_object, dict):
         # This is mostly for singleVisuals within a visual
         if "projections" in data_object:
-            #if "columnProperties" in data_object:
-            #    cp_alias_map = _get_cp_alias(data_object["columnProperties"])
             return _projections_fields(data_object["projections"])
 
         # This is mostly used for filters within a visual
@@ -77,43 +75,9 @@ def _projections_fields(data_object: Dict) -> Set[str]:
         for value in projection:
             # Clean up PBI internal functions
             found_fields.update(_strip_dax_functions(value["queryRef"]))
-            '''
-            for query in all_queries:
-
-                if query in alias_map:
-                    entity = query.split(".")[0]
-                    found_fields.add(f"{entity}.{alias_map[query]}")
-                else:
-                found_fields.add(query)'''
 
     return found_fields
 
-def _get_cp_alias(column_properties: Dict) -> Dict[str, str]:
-    """
-    Creates an alias map from a visual's 'columnProperties' object.
-
-    This is used to resolve display names back to their original field names,
-    especially when metric units are included in the display name (e.g., "Sales [USD]").
-
-    Args:
-        column_properties: The dictionary from a 'columnProperties' key.
-
-    Returns:
-        A dictionary mapping the original field name to its cleaned display name.
-    """
-    cp_alias_map = {}
-
-    # This pattern filters out metric units that could appear in the back of measure descriptions like "Sales [USD]"
-    regex_pattern = r"(.*?)(?=\[[a-zA-ZΑ-Ωα-ω0-9_ &]*\])"
-
-    for key, value in column_properties.items():
-        try:
-            measure = re.findall(regex_pattern, value.displayName)[0]
-        except:
-            measure = value
-        cp_alias_map[key] = measure
-
-    return cp_alias_map
 
 def _strip_dax_functions(query: str) -> Set[str]:
     """
@@ -173,7 +137,8 @@ def _queryMetadata_fields(queryMetadata: Dict) -> Set[str]:
     """
     found_fields = set()
     for select_statement in queryMetadata["Select"]:
-        found_fields.add(select_statement.get("Name",""))
+        raw_field = select_statement.get("Name","")
+        found_fields.update(_strip_dax_functions(raw_field))
 
     return found_fields
 
