@@ -67,15 +67,10 @@ class Page:
         """
 
         for visual in self.visuals:
-            if 'Min(data_combo_distr[Team)]' in visual.used_fields:
-                print()
             self.used_fields.update(visual.used_fields)
 
         if self.filters:
             self.used_fields.update(_recursive_find_fields(self.filters))
-            if 'Min(data_combo_distr[Team)]' in self.used_fields:
-                print()
-
     def _reformat_used_fields(self):
         """
         Converts field names from 'Entity.Property' format to 'Entity[Property]'.
