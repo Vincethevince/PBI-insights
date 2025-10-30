@@ -92,6 +92,9 @@ def _strip_dax_functions(query: str) -> Set[str]:
     Returns:
         A set of unique base fields found in the query.
     """
+    # Edge case protection: if the query is empty, whitespace, or contains no letters, it's not a valid field.
+    if not query or not query.strip() or not re.search('[a-zA-Z]', query):
+        return set()
 
     raw_fields = set()
     wrapper_functions = {"Avg", "Count", "CountNonNull", "Max", "Median", "Min", "StandardDeviation", "Sum"}
@@ -103,8 +106,8 @@ def _strip_dax_functions(query: str) -> Set[str]:
     if found_wrapper:
         # Handle stacked wrapper functions like Divide(Sum(Sales.SalesAmount), Count(Sales.SalesAmount))
         if found_wrapper[0] in rec_wrapper_functions:
-            for sub_query in query[len(found_wrapper[0]):-1].split(","):
-                raw_fields.update(_strip_dax_functions(sub_query))
+            for sub_query in query[len(found_wrapper[0])+1:-1].split(","):
+                raw_fields.update(_strip_dax_functions(sub_query.strip()))
             return raw_fields
 
         # Handle simple wrapper functions like Min(Sales.SalesAmount)
@@ -112,7 +115,7 @@ def _strip_dax_functions(query: str) -> Set[str]:
             # Find content between the first '(' and last ')'
             try:
                 start_index = query.index('(') + 1
-                end_index = query.rindex(')')
+                end_index = query.rindex(')') if ')' in query else len(query)
                 return {query[start_index:end_index]}
             except ValueError:
                 return {query}

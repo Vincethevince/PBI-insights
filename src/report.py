@@ -130,7 +130,7 @@ class Report:
                         new_measure.last_change = last_change_match.group(1)
 
                 # This searches for all other measures like Sales[Amount], entity[name]
-                references = set(result for result in re.findall("[a-zA-Z0-9_ '\"]+\[[a-zA-ZΑ-Ωα-ω0-9_ &]*]{1}", expression))
+                references = set(result.strip() for result in re.findall("[a-zA-Z0-9_ '\"]+\[[a-zA-ZΑ-Ωα-ω0-9_ &]*]{1}", expression))
 
                 # Sometimes, a measure expression looks like "DIVIDE([Measure 1], [Measure 2])"
                 # In this case, the measure.references keep the real names
