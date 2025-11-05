@@ -24,10 +24,9 @@ into excel (or csv) files. With that information, a user could see which measure
 a report has, which ones are (un-) used etc.
 
 With AI and the gathered "report-page-measure/fields" dependencies, we can create
-descriptions of measures. With those, we can create descriptions of pages. Those
-can be used to describe a whole report.
+descriptions of measures. With those, we can create descriptions of pages.
 
-All the page/report descriptions will be embedded and saved in a vector DB.
+All the page descriptions will be embedded and saved in a vector DB.
 By that, we create a search system for new users that want to find 
 certain information in the totality of all reports and their subpages. 
 
@@ -35,6 +34,6 @@ certain information in the totality of all reports and their subpages.
 - [x] Pbix Unzipper
 - [x] Layout Parser
 - [x] Export of fetched data into excel files
-- [ ] AI descriptions/summaries for fetched data
-- [ ] Vector DB 
+- [x] AI descriptions/summaries for fetched data
+- [x] Vector DB 
 - [ ] DataModel Parser

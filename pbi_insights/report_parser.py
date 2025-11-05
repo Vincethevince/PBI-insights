@@ -41,6 +41,12 @@ async def main():
         action="store_true",
         help="Run live AI analysis on measures after parsing and exporting."
     )
+    parser_run.add_argument(
+        "--file_type",
+        type=str,
+        choices=["csv", "xlsx"],
+        help="Type of file to export. Options are 'csv' and 'xlsx'."
+    )
 
     # 'analyze-file' command: Retrospective analysis
     parser_analyze = subparsers.add_parser("analyze-file", help="Run retrospective AI analysis on an existing measure report Excel file.")
@@ -72,8 +78,12 @@ async def main():
         # Export the reports
         print("\n--- Starting Report Export ---")
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        measure_filename = f"measures_{timestamp}.xlsx"
-        page_filename = f"pages_{timestamp}.xlsx"
+        if args.file_type == "csv":
+            measure_filename = f"measures_{timestamp}.csv"
+            page_filename = f"pages_{timestamp}.csv"
+        else:
+            measure_filename = f"measures_{timestamp}.xlsx"
+            page_filename = f"pages_{timestamp}.xlsx"
 
         export_measure_report(parsed_reports, OUTPUT_PATH, measure_filename, args.analyze)
         export_page_report(parsed_reports, OUTPUT_PATH, page_filename,args.analyze)

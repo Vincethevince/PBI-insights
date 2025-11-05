@@ -1,10 +1,10 @@
 from __future__ import annotations
 import os
-from http.client import responses
 from langchain_google_vertexai import ChatVertexAI
 import json
 import asyncio
 from typing import List, Dict
+from dotenv import load_dotenv
 
 from pbi_insights.measure import Measure
 from pbi_insights.page import Page
@@ -25,6 +25,7 @@ class VertexModel:
             temperature: The model's temperature setting, controlling randomness. Lower is more deterministic.
             max_output_tokens: The maximum number of tokens to generate in the response.
         """
+        load_dotenv()
         self.gcp_project = os.getenv("GCP_PROJECT")
 
         self.llm = ChatVertexAI(
