@@ -1,8 +1,8 @@
 from __future__ import annotations
 import json
 from typing import List, Dict, Any, Optional, TYPE_CHECKING, Set
-from utils import _recursive_find_fields
-from visual import Visual
+from .utils import _recursive_find_fields
+from .visual import Visual
 
 if TYPE_CHECKING:
     from .report import Report
@@ -25,6 +25,7 @@ class Page:
         self.name: str = section_data.get("displayName", "Untitled Page")
         self.section: str = section_data.get("name", "ReportSection")
         self.ordinal: Optional[int] = section_data.get("ordinal")
+        self.description: Optional[str] = None
 
         # --- Sizing and Display Attributes ---
         self.width: Optional[float] = section_data.get("width")
@@ -49,6 +50,8 @@ class Page:
         self._find_used_fields()
         self._reformat_used_fields()
         self.used_measures: Set[Measure] = set()
+        self.visual_titles: List[str] = []
+        self._find_all_visual_titles()
 
     def _load_visuals(self, section_data: Dict[str, Any]):
         """Parses visual containers from section data and populates self.visuals."""
@@ -71,6 +74,14 @@ class Page:
 
         if self.filters:
             self.used_fields.update(_recursive_find_fields(self.filters))
+
+    def _find_all_visual_titles(self):
+        """Collects the titles of all visuals within the page"""
+        for visual in self.visuals:
+            if visual.title is not None and visual.title != "":
+                self.visual_titles.append(visual.title)
+
+
     def _reformat_used_fields(self):
         """
         Converts field names from 'Entity.Property' format to 'Entity[Property]'.

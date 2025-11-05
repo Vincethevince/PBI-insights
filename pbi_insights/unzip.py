@@ -86,7 +86,7 @@ class Unzipper:
 
 if __name__ == '__main__':
     # Define paths relative to the project root for better portability
-    # Assumes your script is in a 'src' folder, and 'data' is a sibling to 'src'
+    # Assumes your script is in a 'pbi-insights' folder, and 'data' is a sibling to 'pbi-insights'
     PROJECT_ROOT = Path(__file__).parent.parent
     DATA_PATH = PROJECT_ROOT / "data"
     RAW_PBI_PATH = DATA_PATH / "pbi_files"

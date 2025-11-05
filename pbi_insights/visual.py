@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json
 from typing import Optional, Dict, Any, Set,List, TYPE_CHECKING
-from utils import _recursive_find_fields
+from .utils import _recursive_find_fields
 
 if TYPE_CHECKING:
     from .page import Page
@@ -24,6 +24,7 @@ class Visual:
         self.z: Optional[int] = container.get("z")
         self.width: Optional[float] = container.get("width")
         self.height: Optional[float] = container.get("height")
+        self.title: Optional[str] = None
 
         # --- Parent Reference ---
         self.page: Page = page
@@ -48,6 +49,7 @@ class Visual:
         #self.used_columns: Set['CalculatedColumn'] = set()
         self.used_fields: Set[str] = set()
         self._find_used_fields()
+        self._find_title()
 
     def _find_used_fields(self):
         """Calls the helper function to recursively find used fields in the visual's data."""
@@ -59,6 +61,17 @@ class Visual:
 
         if self.singleVisual:
             self.used_fields.update(_recursive_find_fields(self.singleVisual))
+
+    def _find_title(self):
+        """Searches for the visual title"""
+        try:
+            vcObjects = self.singleVisual.get("vcObjects", {})
+            title = vcObjects.get("title",[])
+            self.title = title[0].get("properties",{}).get("text",{}).get("expr",{}).get("Literal",{}).get("Value","")
+
+
+        except:
+            return
 
     def __repr__(self) -> str:
         return f"Visual(id='{self.id}', type='{self.type}', page='{self.page.name}')"

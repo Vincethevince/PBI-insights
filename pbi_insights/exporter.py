@@ -54,7 +54,7 @@ def export_measure_report(reports: List[Report], output_path: Path, file_name: s
     print(f"Successfully exported measure report to {output_path}")
 
 
-def export_page_report(reports: List[Report], output_path: Path, file_name: str):
+def export_page_report(reports: List[Report], output_path: Path, file_name: str, ai_flag: bool = False):
     """
     Generates a detailed Excel report of all pages across all reports.
 
@@ -62,6 +62,7 @@ def export_page_report(reports: List[Report], output_path: Path, file_name: str)
         reports: A list of fully parsed Report objects.
         output_path: The file path for the output Excel file.
         file_name: The name of the output Excel file.
+        ai_flag: If true, appends '_enhanced' to the filename.
     """
     all_pages_data = []
     for report in reports:
@@ -72,8 +73,11 @@ def export_page_report(reports: List[Report], output_path: Path, file_name: str)
                 "Is Visible": page.is_visible,
                 "Number of Visuals": len(page.visuals),
                 "Used Measures": ", ".join(sorted([m.full_name for m in page.used_measures])),
-                "All Used Fields (Raw)": ", ".join(sorted(page.used_fields))
+                "All Used Fields (Raw)": ", ".join(sorted(page.used_fields)),
+                "All Visual Titles": ", ".join(sorted(page.visual_titles))
             }
+            if ai_flag:
+                page_data["Description"] = page.description
             all_pages_data.append(page_data)
 
     if not all_pages_data:
@@ -82,8 +86,12 @@ def export_page_report(reports: List[Report], output_path: Path, file_name: str)
 
     df = pd.DataFrame(all_pages_data)
     if file_name.endswith(".xlsx"):
+        if ai_flag:
+            file_name = file_name.replace(".xlsx", "_enhanced.xlsx")
         df.to_excel(output_path / file_name, index=False, sheet_name="Pages")
     elif file_name.endswith(".csv"):
+        if ai_flag:
+            file_name = file_name.replace(".csv", "_enhanced.csv")
         df.to_csv(output_path / file_name)
     else:
         print(f"Unsupported file extension: {file_name}")

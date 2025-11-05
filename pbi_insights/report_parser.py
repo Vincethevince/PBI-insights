@@ -2,9 +2,9 @@ import argparse
 import asyncio
 from pathlib import Path
 from typing import List, Dict, Optional
-from report import Report
-from exporter import export_measure_report, export_page_report
-from analyzer import analyze_measures_from_reports, analyze_measures_from_file
+from .report import Report
+from .exporter import export_measure_report, export_page_report
+from .analyzer import analyze_measures_from_reports, analyze_measures_from_file, analyze_pages_from_reports, analyze_pages_from_file
 from datetime import datetime
 
 
@@ -49,6 +49,12 @@ async def main():
         type=Path,
         help="Path to the measure report Excel file to analyze."
     )
+    parser_analyze.add_argument(
+        "analysis_type",
+        type=str,
+        choices=["measures", "pages"],
+        help="Type of file to analyze. Options are 'measures' and 'pages'."
+    )
 
     args = parser.parse_args()
 
@@ -61,6 +67,7 @@ async def main():
         # If --analyze flag is used, run live analysis
         if args.analyze:
             await analyze_measures_from_reports(parsed_reports)
+            await analyze_pages_from_reports(parsed_reports)
 
         # Export the reports
         print("\n--- Starting Report Export ---")
@@ -69,7 +76,7 @@ async def main():
         page_filename = f"pages_{timestamp}.xlsx"
 
         export_measure_report(parsed_reports, OUTPUT_PATH, measure_filename, args.analyze)
-        export_page_report(parsed_reports, OUTPUT_PATH, page_filename)
+        export_page_report(parsed_reports, OUTPUT_PATH, page_filename,args.analyze)
         print("\nExport complete.")
 
     elif args.command == "analyze-file":
@@ -78,7 +85,11 @@ async def main():
             return
 
         # Run retrospective analysis
-        updated_df = await analyze_measures_from_file(args.file_path)
+        if args.analysis_type == "measures":
+            updated_df = await analyze_measures_from_file(args.file_path)
+        elif args.analysis_type =="pages":
+            updated_df = await analyze_pages_from_file(args.file_path)
+
 
         # Save the updated DataFrame to a new file
         new_filename = args.file_path.stem + "_analyzed.xlsx"

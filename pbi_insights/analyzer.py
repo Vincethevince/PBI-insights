@@ -4,7 +4,7 @@ from typing import List, TYPE_CHECKING, Dict
 from pathlib import Path
 import pandas as pd
 
-from models.vertex import VertexModel
+from .models.vertex import VertexModel
 
 if TYPE_CHECKING:
     from report import Report
@@ -44,7 +44,28 @@ async def analyze_measures_from_reports(reports: List[Report], batch_size: int =
                 report.measures[measure_name].description = description
 
 
-async def analyze_measures_from_file(file_path: Path, batch_size: int = 20) -> pd.DataFrame:
+async def analyze_pages_from_reports(reports: List[Report]):
+    """
+    Analyzes pages directly from a list of in-memory Report objects.
+
+    This is the "live" analysis mode. It sends the pages to the AI for summarization.
+
+    Args:
+        reports: A list of parsed Report objects.
+    """
+    print("\n--- Starting Live AI Analysis for Pages ---")
+    model = VertexModel()
+
+    for report in reports:
+        descriptions = await model.process_all_pages(report.pages)
+        print(f"Report '{report.name}': Successfully generated descriptions for {len(descriptions)} pages.")
+
+        for page in report.pages:
+            if page.name in descriptions:
+                page.description = descriptions[page.name]
+
+
+async def analyze_measures_from_file(file_path: Path) -> pd.DataFrame:
     """
     Analyzes measures from a previously exported Excel file.
 
@@ -53,7 +74,6 @@ async def analyze_measures_from_file(file_path: Path, batch_size: int = 20) -> p
 
     Args:
         file_path: The path to the measure report Excel file.
-        batch_size: The number of measures to process in each concurrent batch.
 
     Returns:
         A pandas DataFrame with the 'Description' column updated with AI-generated content.
@@ -83,7 +103,7 @@ async def analyze_measures_from_file(file_path: Path, batch_size: int = 20) -> p
         ]
         
         print(f"Report '{report_name}': Found {len(measures_for_ai)} measures to analyze.")
-        descriptions = await model.process_all_measures(measures_for_ai, batch_size)
+        descriptions = await model.process_all_pages(measures_for_ai)
         print(f"Report '{report_name}': Successfully generated descriptions for {len(descriptions)} measures.")
         
         # Create a mapping of measure names to descriptions for the current report
@@ -94,5 +114,50 @@ async def analyze_measures_from_file(file_path: Path, batch_size: int = 20) -> p
             measure_full_name = f"{row['Table']}[{row['Measure Name']}]"
             if measure_full_name in description_map:
                 df.loc[index, 'Description'] = description_map[measure_full_name]
+
+    return df
+
+
+async def analyze_pages_from_file(file_path: Path) -> pd.DataFrame:
+    """
+    Analyzes pages from a previously exported Excel file.
+
+    This is the "retrospective" analysis mode. It reads a page report and uses the AI to fill Descriptions in.
+
+    Args:
+        file_path: The path to the page report Excel file.
+
+    Returns:
+        A pandas DataFrame with the 'Description' column updated with AI-generated content.
+    """
+    print(f"\n--- Starting Retrospective AI Analysis on Page Report: {file_path.name} ---")
+    if file_path.suffix == ".xlsx":
+        df = pd.read_excel(file_path)
+    elif file_path.suffix == ".csv":
+        df = pd.read_csv(str(file_path))
+    else:
+        raise ValueError(f"Unsupported file type: {file_path.suffix}")
+
+    df['Description'] = ""
+    model = VertexModel()
+
+    for report_name, report_df in df.groupby('Report'):
+        pages_for_ai = [
+            {"name": row['Page Name'],
+             "visual_titles": row["All Visual Titles"],
+             "used_fields": row["All Used Fields (Raw)"],
+             "measures": row["Used Measures"]
+             }
+            for _, row in report_df.iterrows()
+        ]
+
+        print(f"Report '{report_name}': Found {len(pages_for_ai)} pages to analyze.")
+        descriptions = await model.process_all_pages(pages_for_ai)
+        print(f"Report '{report_name}': Successfully generated descriptions for {len(descriptions)} pages.")
+
+        for index, row in report_df.iterrows():
+            page_full_name = f"{report_name}[{row['Page Name']}]"
+            if page_full_name in descriptions:
+                df.loc[index, 'Description'] = descriptions[page_full_name]
 
     return df

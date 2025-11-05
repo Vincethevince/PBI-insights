@@ -3,13 +3,11 @@ import json
 from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 from pathlib import Path
 import re
-from page import Page
-from measure import Measure, UsageState
+from .page import Page
+from .measure import Measure, UsageState
 
 if TYPE_CHECKING:
     from .page import Page
-
-
 
 class Report:
     """Represents a Power BI report, parsed from its unzipped file structure."""
