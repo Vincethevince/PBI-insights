@@ -36,4 +36,6 @@ certain information in the totality of all reports and their subpages.
 - [x] Export of fetched data into excel files
 - [x] AI descriptions/summaries for fetched data
 - [x] Vector DB 
+- [ ] Structured Logging & Error Handling
+- [ ] Change Detection for AI Analysis (Caching)
 - [ ] DataModel Parser
