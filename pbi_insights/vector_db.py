@@ -3,7 +3,7 @@ import hashlib
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 
 import pandas as pd
 import chromadb
@@ -19,12 +19,59 @@ from dotenv import load_dotenv
 
 
 # ---------------------------------------------------------------------------
-# Backend selector
+# Backend / embedding selectors
 # ---------------------------------------------------------------------------
 
 class VectorDBBackend(Enum):
     CHROMA = "chroma"
     FAISS = "faiss"
+
+
+EmbeddingProvider = Literal["gemini", "openai", "local"]
+"""
+Selects which embedding model to use when building / querying the vector store.
+
+- ``"gemini"``  – Google Vertex AI ``text-embedding-005``  (requires ``GCP_PROJECT``)
+- ``"openai"``  – OpenAI ``text-embedding-3-small``        (requires ``OPENAI_API_KEY``)
+- ``"local"``   – SentenceTransformers ``all-MiniLM-L6-v2`` (no API key needed)
+
+When ``"gemini"`` is requested but ``GCP_PROJECT`` is not set, falls back to ``"local"``.
+When ``"openai"`` is requested but ``OPENAI_API_KEY`` is not set, raises ``EnvironmentError``.
+"""
+
+
+def _build_embedding_function(provider: EmbeddingProvider = "gemini"):
+    """
+    Instantiates and returns the LangChain embedding object for the given provider.
+
+    Args:
+        provider: One of ``"gemini"``, ``"openai"``, or ``"local"``.
+
+    Returns:
+        A LangChain embeddings instance.
+    """
+    load_dotenv()
+
+    if provider == "openai":
+        from langchain_openai import OpenAIEmbeddings
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise EnvironmentError(
+                "OPENAI_API_KEY is not set. "
+                "Add it to your .env file or as an environment variable."
+            )
+        return OpenAIEmbeddings(model="text-embedding-3-small", api_key=api_key)
+
+    if provider == "gemini":
+        gcp_project = os.getenv("GCP_PROJECT")
+        if gcp_project:
+            return VertexAIEmbeddings(
+                model_name="text-embedding-005", project=gcp_project
+            )
+        print("  [vector_db] GCP_PROJECT not set – falling back to local embeddings.")
+
+    # "local" (or gemini fallback)
+    return SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 
 
 # ---------------------------------------------------------------------------
@@ -138,25 +185,29 @@ class BaseVectorDB(ABC):
 class ChromaVectorDB(BaseVectorDB):
     """Vector DB backend backed by ChromaDB with hybrid semantic + keyword search."""
 
-    def __init__(self, db_path: Optional[Path] = None):
-        load_dotenv()
-        self.gcp_project = os.getenv("GCP_PROJECT")
-
+    def __init__(
+        self,
+        db_path: Optional[Path] = None,
+        embedding_provider: EmbeddingProvider = "gemini",
+    ):
+        """
+        Args:
+            db_path:            Directory for the persistent Chroma store.
+            embedding_provider: Which embeddings to use – ``"gemini"`` (default),
+                                ``"openai"``, or ``"local"``.
+        """
         if db_path:
             self.client = chromadb.PersistentClient(path=str(db_path))
         else:
             self.client = chromadb.PersistentClient()
 
-        if self.gcp_project:
-            self.embedding_function = VertexAIEmbeddings(
-                model_name="text-embedding-005", project=self.gcp_project
-            )
-            # Chroma-native function used only for collection creation
-            self._chroma_ef = None
-        else:
-            self.embedding_function = SentenceTransformerEmbeddings(
-                model_name="all-MiniLM-L6-v2"
-            )
+        self.embedding_function = _build_embedding_function(embedding_provider)
+
+        # Chroma-native EF used only for collection creation (local / fallback only)
+        self._chroma_ef = None
+        if embedding_provider == "local" or (
+            embedding_provider == "gemini" and not os.getenv("GCP_PROJECT")
+        ):
             self._chroma_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
                 model_name="all-MiniLM-L6-v2"
             )
@@ -174,9 +225,9 @@ class ChromaVectorDB(BaseVectorDB):
         on the same file never creates duplicate entries.
 
         Args:
-            report_file: Path to the Excel or CSV page report.
-            collection_name: Chroma collection name.
-            include_hidden: When False, hidden pages are excluded from the store.
+            report_file:      Path to the Excel or CSV page report.
+            collection_name:  Chroma collection name.
+            include_hidden:   When False, hidden pages are excluded from the store.
         """
         print(f"\n--- Building ChromaDB from {report_file.name} ---")
         df = _load_dataframe(report_file, include_hidden=include_hidden)
@@ -214,9 +265,9 @@ class ChromaVectorDB(BaseVectorDB):
         Queries the ChromaDB collection using hybrid search (semantic + BM25 keyword).
 
         Args:
-            query: Natural-language search string.
+            query:           Natural-language search string.
             collection_name: Chroma collection to search.
-            top_k: Number of results to return per retriever.
+            top_k:           Number of results to return per retriever.
 
         Returns:
             Ranked list of Document objects.
@@ -258,24 +309,24 @@ class FaissVectorDB(BaseVectorDB):
     """
     Vector DB backend backed by FAISS (pure local, no server required).
 
-    The index is saved to / loaded from  <db_path>/<collection_name>.faiss
-    on disk so it survives restarts.
+    The index is saved to / loaded from  <db_path>/<collection_name>/  on disk
+    so it survives restarts.
     """
 
-    def __init__(self, db_path: Optional[Path] = None):
-        load_dotenv()
-        self.gcp_project = os.getenv("GCP_PROJECT")
+    def __init__(
+        self,
+        db_path: Optional[Path] = None,
+        embedding_provider: EmbeddingProvider = "gemini",
+    ):
+        """
+        Args:
+            db_path:            Root directory for persisting the FAISS index.
+            embedding_provider: Which embeddings to use – ``"gemini"`` (default),
+                                ``"openai"``, or ``"local"``.
+        """
         self.db_path = db_path or Path.cwd() / "vector_db"
         self.db_path.mkdir(parents=True, exist_ok=True)
-
-        if self.gcp_project:
-            self.embedding_function = VertexAIEmbeddings(
-                model_name="text-embedding-005", project=self.gcp_project
-            )
-        else:
-            self.embedding_function = SentenceTransformerEmbeddings(
-                model_name="all-MiniLM-L6-v2"
-            )
+        self.embedding_function = _build_embedding_function(embedding_provider)
 
     def _index_path(self, collection_name: str) -> Path:
         return self.db_path / collection_name
@@ -289,14 +340,10 @@ class FaissVectorDB(BaseVectorDB):
         """
         Builds (or rebuilds) a FAISS index from a page report file.
 
-        The index is persisted to disk at <db_path>/<collection_name>/.
-        Re-running this command rebuilds the index from scratch (FAISS does not
-        support incremental upsert, so a full rebuild is the safe approach).
-
         Args:
-            report_file: Path to the Excel or CSV page report.
+            report_file:     Path to the Excel or CSV page report.
             collection_name: Sub-directory name for the saved index.
-            include_hidden: When False, hidden pages are excluded.
+            include_hidden:  When False, hidden pages are excluded.
         """
         print(f"\n--- Building FAISS index from {report_file.name} ---")
         df = _load_dataframe(report_file, include_hidden=include_hidden)
@@ -323,9 +370,9 @@ class FaissVectorDB(BaseVectorDB):
         Queries a persisted FAISS index using hybrid search (semantic + BM25).
 
         Args:
-            query: Natural-language search string.
+            query:           Natural-language search string.
             collection_name: Sub-directory name of the saved index.
-            top_k: Number of results to return per retriever.
+            top_k:           Number of results to return per retriever.
 
         Returns:
             Ranked list of Document objects.
@@ -375,21 +422,24 @@ class VectorDBFactory:
     def create(
         backend: VectorDBBackend = VectorDBBackend.CHROMA,
         db_path: Optional[Path] = None,
+        embedding_provider: EmbeddingProvider = "gemini",
     ) -> BaseVectorDB:
         """
         Instantiates and returns a vector DB backend.
 
         Args:
-            backend: Which backend to use (CHROMA or FAISS).
-            db_path: Root directory for persisting the index/store.
+            backend:            Which store to use (CHROMA or FAISS).
+            db_path:            Root directory for persisting the index/store.
+            embedding_provider: Which embedding model to use –
+                                ``"gemini"`` (default), ``"openai"``, or ``"local"``.
 
         Returns:
             A BaseVectorDB instance.
         """
         if backend == VectorDBBackend.CHROMA:
-            return ChromaVectorDB(db_path=db_path)
+            return ChromaVectorDB(db_path=db_path, embedding_provider=embedding_provider)
         elif backend == VectorDBBackend.FAISS:
-            return FaissVectorDB(db_path=db_path)
+            return FaissVectorDB(db_path=db_path, embedding_provider=embedding_provider)
         else:
             raise ValueError(f"Unknown backend: {backend}")
 

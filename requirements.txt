@@ -14,5 +14,8 @@ langchain-classic>=1.0.0
 sentence-transformers>=2.2.2   # local embedding fallback (no GCP required)
 faiss-cpu>=1.7.4               # FAISS backend
 
+# OpenAI support (LLM + embeddings)
+langchain-openai>=0.3.0        # ChatOpenAI + OpenAIEmbeddings
+
 # Environment / config
 python-dotenv>=1.2.1

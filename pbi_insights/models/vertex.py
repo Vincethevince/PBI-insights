@@ -3,13 +3,15 @@ import os
 from langchain_google_vertexai import ChatVertexAI
 import json
 import asyncio
-from typing import List, Dict
+from typing import List, Dict, Union
 from dotenv import load_dotenv
 
 from pbi_insights.measure import Measure
 from pbi_insights.page import Page
+from pbi_insights.models.base import BaseModel
 
-class VertexModel:
+
+class VertexModel(BaseModel):
     """
     A client for interacting with Google's Vertex AI Gemini models to generate documentation for DAX measures.
 
