@@ -1,9 +1,11 @@
 from __future__ import annotations
 from typing import Optional, Set, TYPE_CHECKING
 from enum import Enum
+
 if TYPE_CHECKING:
     from .report import Report
     from .page import Page
+
 
 class UsageState(Enum):
     """Represents the usage status of a measure."""
@@ -19,10 +21,11 @@ class UsageState(Enum):
     # The measure is only referenced by other items that are themselves unused.
     DANGLING = "Dangling"
 
+
 class Measure:
     """Represents a single, hashable DAX measure."""
 
-    def __init__(self, name: str, entity_name: str, expression: str, report: Report):
+    def __init__(self, name: str, entity_name: str, expression: str, report: "Report"):
         """
         Initializes a new Measure object.
 
@@ -48,11 +51,10 @@ class Measure:
 
         # --- Dependencies (What this measure USES) ---
         self.referenced_measures: Set[str] = set()
-        #self.referenced_columns: Set['CalculatedColumn'] = set()
 
         # --- Dependents (Where this measure IS USED) ---
         self.referenced_by_measures: Set[Measure] = set()
-        self.used_in_pages: Set[Page] = set()
+        self.used_in_pages: Set["Page"] = set()
 
     @property
     def full_name(self) -> str:
