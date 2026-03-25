@@ -134,7 +134,7 @@ class VectorDB:
 if __name__ == "__main__":
     db_path = Path.cwd().parent / "vector_db"
     db = VectorDB(db_path=db_path)
-    file_path = Path.cwd() / ".." / "output" / "pages_2025-11-04_12-41-39_enhanced.xlsx"
+    file_path = Path.cwd() / ".." / "output" / "pages_2025-11-05_16-02-43_enhanced.csv"
     db.create_pagedb_from_file(report_file=file_path)
 
     print("\n--- QUERYING DATABASE ---")

@@ -1,8 +1,9 @@
 import zipfile
 import logging
+import shutil
 from pathlib import Path
 from tqdm import tqdm
-from typing import Optional
+from typing import Optional, List
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -41,6 +42,8 @@ class Unzipper:
                 raise FileNotFoundError(f"Provided file does not exist: {file_path}")
             self.single_file_path = file_path
 
+        self.errors: List[str] = []
+
     def unzip_one_file(self, file_path: Path):
         """
         Unzips a single .pbix file to a subdirectory in the destination.
@@ -53,18 +56,30 @@ class Unzipper:
             return
 
         target_path = self.destination_dir / file_path.stem
+
+        # If the target directory already exists, remove it to ensure a clean extraction.
+        if target_path.exists():
+            logging.info(f"Removing existing directory: '{target_path}'")
+            try:
+                shutil.rmtree(target_path)
+            except OSError as e:
+                logging.error(f"Error removing directory '{target_path}': {e}")
+                self.errors.append(f"Could not remove old directory for '{file_path.name}': {e}")
+                return
+
         logging.info(f"Extracting '{file_path.name}' to '{target_path}'...")
 
         try:
             with zipfile.ZipFile(str(file_path), "r") as zip_ref:
                 zip_ref.extractall(target_path)
         except zipfile.BadZipFile:
-            logging.error(
-                f"Could not extract '{file_path.name}'. It may be corrupt or have a high security level. "
-                "Consider lowering the security level or extracting it manually."
-            )
+            error_msg = f"Could not extract '{file_path.name}'. It may be corrupt or password-protected."
+            logging.error(error_msg)
+            self.errors.append(error_msg)
         except Exception as e:
-            logging.error(f"An unexpected error occurred while extracting '{file_path.name}': {e}")
+            error_msg = f"An unexpected error occurred while extracting '{file_path.name}': {e}"
+            logging.error(error_msg)
+            self.errors.append(error_msg)
 
     def unzip_all(self):
         """Iterates through the source directory and unzips all .pbix files."""
@@ -83,6 +98,14 @@ class Unzipper:
         else:
             self.unzip_all()
 
+        if self.errors:
+            logging.warning("\n--- Extraction Summary: Encountered Errors ---")
+            for error in self.errors:
+                logging.warning(f"- {error}")
+            logging.warning("---------------------------------------------")
+        else:
+            logging.info("Unzipping process completed successfully with no errors.")
+
 
 if __name__ == '__main__':
     # Define paths relative to the project root for better portability
@@ -99,7 +122,5 @@ if __name__ == '__main__':
     try:
         unzipper = Unzipper(RAW_PBI_PATH, UNZIPPED_PATH)
         unzipper.run()
-        logging.info("Unzipping process completed successfully.")
     except (NotADirectoryError, FileNotFoundError) as e:
         logging.error(f"Initialization failed: {e}")
-

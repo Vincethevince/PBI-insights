@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+from pathlib import Path
 from typing import List, Dict, Any, Optional, TYPE_CHECKING, Set
 from .utils import _recursive_find_fields
 from .visual import Visual
@@ -52,6 +53,84 @@ class Page:
         self.used_measures: Set[Measure] = set()
         self.visual_titles: List[str] = []
         self._find_all_visual_titles()
+
+    @classmethod
+    def from_definition(cls, page_json: Dict[str, Any], page_dir: Path, report: 'Report', ordinal: int) -> 'Page':
+        """
+        Factory method to create a Page instance from a parsed page.json (definition format).
+
+        In the definition format each page lives in its own sub-directory under
+        definition/pages/<page-id>/ and carries a page.json plus a visuals/ sub-directory,
+        instead of being embedded as a section in the monolithic Layout file.
+
+        Args:
+            page_json: The parsed contents of a page.json file.
+            page_dir: Path to the page's directory (used to locate the visuals/ sub-dir).
+            report: A back-reference to the parent Report object.
+            ordinal: The display order of the page, derived from pages.json pageOrder.
+
+        Returns:
+            A fully initialised Page instance.
+        """
+        instance = cls.__new__(cls)
+
+        # --- Core Attributes ---
+        instance.id = page_json.get("name", "")
+        instance.name = page_json.get("displayName", "Untitled Page")
+        instance.section = page_json.get("name", "ReportSection")
+        instance.ordinal = ordinal
+        instance.description = None
+
+        # --- Sizing and Display ---
+        instance.width = page_json.get("width")
+        instance.height = page_json.get("height")
+        # New format: visibility is a string field; absence means visible
+        instance.is_visible = page_json.get("visibility") != "HiddenInViewMode"
+
+        # No separate config block in new format
+        instance.config = {}
+
+        # --- Page-level Filters ---
+        # New format: filters live under filterConfig.filters as a parsed list (not a JSON string)
+        instance.filters = page_json.get("filterConfig", {}).get("filters", [])
+
+        # --- Parent Reference ---
+        instance.report = report
+
+        # --- Load visuals from visuals/ sub-directory ---
+        instance.visuals: List[Visual] = []
+        instance._load_visuals_from_definition(page_dir)
+
+        # --- Field / measure resolution ---
+        instance.used_fields: Set[str] = set()
+        instance._find_used_fields()
+        instance._reformat_used_fields()
+        instance.used_measures: Set['Measure'] = set()
+        instance.visual_titles: List[str] = []
+        instance._find_all_visual_titles()
+
+        return instance
+
+    def _load_visuals_from_definition(self, page_dir: Path):
+        """Loads visuals from the visuals/ sub-directory of a definition-format page."""
+        visuals_dir = page_dir / "visuals"
+        if not visuals_dir.exists():
+            return
+
+        import json as _json
+        for visual_dir in visuals_dir.iterdir():
+            if not visual_dir.is_dir():
+                continue
+            visual_file = visual_dir / "visual.json"
+            if not visual_file.exists():
+                continue
+            try:
+                with open(visual_file, "r", encoding="utf-8") as f:
+                    visual_json = _json.load(f)
+                visual = Visual.from_definition(visual_json, self)
+                self.visuals.append(visual)
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"Warning: Could not parse visual '{visual_dir.name}' on page '{self.name}': {e}")
 
     def _load_visuals(self, section_data: Dict[str, Any]):
         """Parses visual containers from section data and populates self.visuals."""

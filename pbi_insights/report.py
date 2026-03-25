@@ -54,6 +54,9 @@ class Report:
         """
         Factory method to create a Report instance from the path to an unzipped .pbix folder.
 
+        Automatically detects old-format (Report/Layout) vs new-format (Report/definition/)
+        and delegates accordingly.
+
         Args:
             report_path: The path to the directory containing the unzipped report files.
 
@@ -64,10 +67,16 @@ class Report:
             report_path = Path(report_path)
 
         report_name = report_path.name
-        layout_file = report_path / "Report" / "Layout"
 
+        # New pbix format: Report/definition/ directory exists
+        definition_dir = report_path / "Report" / "definition"
+        if definition_dir.exists():
+            return cls.from_definition_dir(definition_dir, report_name)
+
+        # Old pbix format: Report/Layout file
+        layout_file = report_path / "Report" / "Layout"
         if not layout_file.exists():
-            raise FileNotFoundError(f"Layout file not found for report '{report_name}' at {layout_file}")
+            raise FileNotFoundError(f"Neither 'Report/definition/' nor 'Report/Layout' found for report '{report_name}' at {report_path}")
 
         try:
             with open(layout_file, 'r', encoding='utf-16-le') as f:
@@ -76,6 +85,182 @@ class Report:
             raise ValueError(f"Error reading or parsing Layout file for report '{report_name}': {e}") from e
 
         return cls(name=report_name, layout_data=layout_data)
+
+    @classmethod
+    def from_pbir_folder(cls, pbir_path: Path | str) -> 'Report':
+        """
+        Factory method to create a Report instance from a .pbir extracted folder.
+
+        In a .pbir folder the definition/ directory sits at the root level (not under Report/).
+        The folder name typically ends with '.Report'; that suffix is stripped for the report name.
+
+        Args:
+            pbir_path: The path to the root of the extracted .pbir folder.
+
+        Returns:
+            A fully initialized Report instance.
+        """
+        if isinstance(pbir_path, str):
+            pbir_path = Path(pbir_path)
+
+        # Strip '.Report' suffix from folder name to get a clean report name
+        raw_name = pbir_path.name
+        report_name = raw_name.removesuffix(".Report") if raw_name.endswith(".Report") else raw_name
+
+        definition_dir = pbir_path / "definition"
+        if not definition_dir.exists():
+            raise FileNotFoundError(f"'definition/' directory not found in pbir folder '{raw_name}' at {pbir_path}")
+
+        return cls.from_definition_dir(definition_dir, report_name)
+
+    @classmethod
+    def from_definition_dir(cls, definition_dir: Path, report_name: str) -> 'Report':
+        """
+        Factory method to create a Report instance from a definition/ directory.
+
+        This is the shared parsing path for both new-format .pbix files and .pbir folders,
+        as both expose the same definition/ directory structure.
+
+        Args:
+            definition_dir: Path to the definition/ directory.
+            report_name: The human-readable name of the report.
+
+        Returns:
+            A fully initialized Report instance.
+        """
+        # Read report.json for top-level config (theme, filters, resource packages)
+        report_json_path = definition_dir / "report.json"
+        if not report_json_path.exists():
+            raise FileNotFoundError(f"report.json not found in definition directory: {definition_dir}")
+
+        try:
+            with open(report_json_path, "r", encoding="utf-8") as f:
+                report_json = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            raise ValueError(f"Error reading report.json for '{report_name}': {e}") from e
+
+        # Read reportExtensions.json for measures
+        extensions_data: Dict[str, Any] = {}
+        extensions_path = definition_dir / "reportExtensions.json"
+        if extensions_path.exists():
+            try:
+                with open(extensions_path, "r", encoding="utf-8") as f:
+                    extensions_data = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"Warning: Could not read reportExtensions.json for '{report_name}': {e}")
+
+        # Build a synthetic layout_data so the existing __init__ still works for
+        # attributes it reads from layout_data (config, bookmarks, etc.)
+        # Pages and measures are loaded via the definition-specific helpers below.
+        layout_data: Dict[str, Any] = {
+            "sections": [],   # pages are loaded separately
+            "config": json.dumps({
+                "bookmarks": report_json.get("bookmarks", []),
+                "modelExtensions": [],  # measures loaded separately
+            }),
+            "filters": json.dumps(report_json.get("filterConfig", {}).get("filters", [])),
+            "resourcePackages": report_json.get("resourcePackages"),
+        }
+
+        instance = cls(name=report_name, layout_data=layout_data)
+
+        # Override pages with definition-format pages
+        instance.pages = []
+        pages_dir = definition_dir / "pages"
+        if pages_dir.exists():
+            instance._load_pages_from_definition(pages_dir)
+
+        # Override measures with definition-format measures
+        instance.measures = {}
+        if extensions_data:
+            instance._load_measures_from_extensions(extensions_data)
+
+        # Re-run dependency / usage resolution with the newly loaded data
+        instance._resolve_measure_dependencies()
+        instance._resolve_usage_dependencies()
+        instance._resolve_measure_usage_states()
+
+        return instance
+
+    def _load_pages_from_definition(self, pages_dir: Path):
+        """
+        Loads pages from the definition/pages/ directory structure.
+
+        Reads pages.json for display order, then loads each page sub-directory's
+        page.json and visuals/ folder via Page.from_definition().
+        """
+        # Determine page order from pages.json (index = ordinal)
+        page_order: List[str] = []
+        pages_json_path = pages_dir / "pages.json"
+        if pages_json_path.exists():
+            try:
+                with open(pages_json_path, "r", encoding="utf-8") as f:
+                    page_order = json.load(f).get("pageOrder", [])
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"Warning: Could not read pages.json for '{self.name}': {e}")
+
+        # Build a lookup from page-id → ordinal
+        ordinal_map: Dict[str, int] = {page_id: idx for idx, page_id in enumerate(page_order)}
+
+        for page_dir in pages_dir.iterdir():
+            if not page_dir.is_dir():
+                continue
+            page_json_path = page_dir / "page.json"
+            if not page_json_path.exists():
+                continue
+            try:
+                with open(page_json_path, "r", encoding="utf-8") as f:
+                    page_json = json.load(f)
+                ordinal = ordinal_map.get(page_dir.name, 9999)
+                page = Page.from_definition(page_json, page_dir, self, ordinal)
+                self.pages.append(page)
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"Warning: Could not parse page '{page_dir.name}' in '{self.name}': {e}")
+
+        # Sort pages by their ordinal so they appear in the correct display order
+        self.pages.sort(key=lambda p: p.ordinal if p.ordinal is not None else 9999)
+
+    def _load_measures_from_extensions(self, extensions_data: Dict[str, Any]):
+        """
+        Loads measures from parsed reportExtensions.json data.
+
+        The structure is identical to the old modelExtensions entries embedded in
+        the Layout config, so the same parsing logic applies.
+        """
+        all_entities = extensions_data.get("entities", [])
+
+        for entity in all_entities:
+            entity_name = entity.get("name", "Unknown")
+            all_measures = entity.get("measures", [])
+
+            for measure in all_measures:
+                name = measure["name"]
+                expression = measure["expression"]
+                new_measure = Measure(name, entity_name, expression, self)
+
+                # Parse optional author/description/last_change comments
+                comment = re.search(r"/\*.*? Author:.*?\*/", expression, re.DOTALL)
+                if comment is not None:
+                    comment = comment.group()
+                    author_match = re.search(r"Author: ([a-zA-Z ]*)", comment, re.DOTALL)
+                    if author_match is not None:
+                        new_measure.author = author_match.group(1)
+                    description_match = re.search(r'Description: ([a-zA-Z0-9 .\-"]*)', comment)
+                    if description_match is not None:
+                        new_measure.description = description_match.group(1)
+                    last_change_match = re.search(r"Last change: ([0-9./-]*)", comment)
+                    if last_change_match is not None:
+                        new_measure.last_change = last_change_match.group(1)
+
+                # Collect explicit measure references
+                references = set(result.strip() for result in re.findall(r"[a-zA-Z0-9_ '\"]+\[[a-zA-ZΑ-Ωα-ω0-9_ &]*]{1}", expression))
+
+                if "references" in measure:
+                    if "measures" in measure["references"]:
+                        references.update(set(f'{ref["entity"]}[{ref["name"]}]' for ref in measure["references"]["measures"]))
+
+                new_measure.referenced_measures = references
+                self.measures[new_measure.full_name] = new_measure
 
     def _load_pages(self, layout_data: Dict[str, Any]):
         """

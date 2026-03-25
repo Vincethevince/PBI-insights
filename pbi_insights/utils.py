@@ -55,26 +55,34 @@ def _recursive_find_fields(data_object: Any) -> Set[str]:
 
     return found_fields
 
-def _projections_fields(data_object: Dict) -> Set[str]:
+def _projections_fields(data_object) -> Set[str]:
     """Extracts field names from a 'projections' object within a visual.
 
-    This function iterates through the projections (like 'Values', 'Series', etc.),
-    extracts the 'queryRef' for each field, and cleans it of any DAX wrapper
-    functions (e.g., 'Sum(...)') to get the base field name. This structure is
-    most commonly found in 'singleVisual' objects.
+    Handles two shapes:
+    - Old format (singleVisual): dict mapping role-name -> [projection, ...]
+    - New format (definition): list of projection objects directly
 
     Args:
-        data_object: The dictionary from a 'projections' key.
+        data_object: Either a role-keyed dict or a list of projection objects.
 
     Returns:
         A set of base field names found in the projections.
     """
     found_fields = set()
 
-    for description, projection in data_object.items():
-        for value in projection:
-            # Clean up PBI internal functions
-            found_fields.update(_strip_dax_functions(value["queryRef"]))
+    if isinstance(data_object, list):
+        # New format: projections is a flat list of projection objects
+        for value in data_object:
+            if isinstance(value, dict) and "queryRef" in value:
+                found_fields.update(_strip_dax_functions(value["queryRef"]))
+    elif isinstance(data_object, dict):
+        # Old format: projections is a dict of role-name -> [projection, ...]
+        for description, projection in data_object.items():
+            if isinstance(projection, list):
+                for value in projection:
+                    if isinstance(value, dict) and "queryRef" in value:
+                        # Clean up PBI internal functions
+                        found_fields.update(_strip_dax_functions(value["queryRef"]))
 
     return found_fields
 

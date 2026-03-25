@@ -1,3 +1,11 @@
+*.pbix
+data/
+*.env
+
+# ChromaDB vector store
+chroma/
+vector_db/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
