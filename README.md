@@ -122,6 +122,58 @@ python -m pbi_insights.report_parser analyze-file output/measures_2026-03-25_10-
 python -m pbi_insights.report_parser analyze-file output/pages_2026-03-25_10-00-00.xlsx pages
 ```
 
+### 5. Build the vector database
+
+The vector DB enables semantic search across all report pages. It requires an enhanced
+page report file (one that contains an AI-generated `Description` column — produced by
+`run --analyze` or `analyze-file`).
+
+```bash
+# Build with default settings (ChromaDB backend, hidden pages excluded)
+python -m pbi_insights.report_parser build-db output/pages_2026-03-25_10-00-00_enhanced.xlsx
+
+# Include hidden pages (tooltips, scratch pages, etc.)
+python -m pbi_insights.report_parser build-db output/pages_2026-03-25_10-00-00_enhanced.xlsx --include-hidden
+
+# Use the FAISS backend instead of ChromaDB
+python -m pbi_insights.report_parser build-db output/pages_2026-03-25_10-00-00_enhanced.xlsx --backend faiss
+
+# Custom collection name
+python -m pbi_insights.report_parser build-db output/pages_2026-03-25_10-00-00_enhanced.xlsx --collection my_collection
+```
+
+The index is persisted to `vector_db/` in the project root. Running `build-db` again on
+the same file safely **upserts** existing entries (ChromaDB) or **rebuilds** the index
+from scratch (FAISS) — no duplicates either way.
+
+#### Backends
+
+| Backend | Flag | Storage | Notes |
+|---------|------|---------|-------|
+| **ChromaDB** | `--backend chroma` (default) | `vector_db/` (SQLite) | Supports incremental upsert; good default |
+| **FAISS** | `--backend faiss` | `vector_db/<collection>/` | Pure local, no server; full rebuild on each run |
+
+### 6. Query the vector database
+
+Search across all embedded pages with a natural-language query:
+
+```bash
+# Basic search (returns top 5 results)
+python -m pbi_insights.report_parser query-db "show me pages about delayed items"
+
+# Return more results
+python -m pbi_insights.report_parser query-db "monthly sales performance" --top-k 10
+
+# Query a FAISS index
+python -m pbi_insights.report_parser query-db "revenue by region" --backend faiss
+
+# Query a custom collection
+python -m pbi_insights.report_parser query-db "customer churn overview" --collection my_collection
+```
+
+Search uses a **hybrid retriever** — 60 % semantic (embedding similarity) + 40 % keyword
+(BM25) — so it handles both conceptual and exact-term queries well.
+
 ## Roadmap
 
 - [x] `.pbix` Unzipper

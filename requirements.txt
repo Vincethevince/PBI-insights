@@ -1,5 +1,18 @@
+# Core parsing & export
 langchain_google_vertexai>=3.0.1
 openpyxl>=3.1.5
 pandas>=2.3.3
 pathlib>=1.0.1
 tqdm>=4.67.1
+
+# Vector DB & embeddings
+chromadb>=1.3.3
+langchain>=1.0.3
+langchain-community>=0.4.1
+langchain-core>=1.0.2
+langchain-classic>=1.0.0
+sentence-transformers>=2.2.2   # local embedding fallback (no GCP required)
+faiss-cpu>=1.7.4               # FAISS backend
+
+# Environment / config
+python-dotenv>=1.2.1
