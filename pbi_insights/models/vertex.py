@@ -6,8 +6,8 @@ import asyncio
 from typing import List, Dict, Union
 from dotenv import load_dotenv
 
-from pbi_insights.measure import Measure
-from pbi_insights.page import Page
+from pbi_insights.domain.measure import Measure
+from pbi_insights.domain.page import Page
 from pbi_insights.models.base import BaseModel
 
 

@@ -1,15 +1,17 @@
 from __future__ import annotations
+
 import asyncio
-from typing import List, TYPE_CHECKING, Dict, Literal
 from pathlib import Path
+from typing import List, TYPE_CHECKING, Dict, Literal
+
 import pandas as pd
 
-from .models.vertex import VertexModel
-from .models.openai_model import OpenAIModel
-from .models.base import BaseModel
+from pbi_insights.models.vertex import VertexModel
+from pbi_insights.models.openai_model import OpenAIModel
+from pbi_insights.models.base import BaseModel
 
 if TYPE_CHECKING:
-    from report import Report
+    from pbi_insights.domain.report import Report
 
 # ---------------------------------------------------------------------------
 # Internal helper
@@ -25,10 +27,6 @@ def _get_model(provider: ModelProvider) -> BaseModel:
     Args:
         provider: ``"gemini"`` (default) uses Google Vertex AI;
                   ``"openai"`` uses the OpenAI Chat API.
-
-    Requires the corresponding environment variable to be set:
-        - Gemini  → ``GCP_PROJECT``
-        - OpenAI  → ``OPENAI_API_KEY``
     """
     if provider == "openai":
         return OpenAIModel()
@@ -40,7 +38,7 @@ def _get_model(provider: ModelProvider) -> BaseModel:
 # ---------------------------------------------------------------------------
 
 async def analyze_measures_from_reports(
-    reports: List["Report"],
+    reports: "List[Report]",
     batch_size: int = 20,
     provider: ModelProvider = "gemini",
 ):
@@ -78,13 +76,11 @@ async def analyze_measures_from_reports(
 
 
 async def analyze_pages_from_reports(
-    reports: List["Report"],
+    reports: "List[Report]",
     provider: ModelProvider = "gemini",
 ):
     """
     Analyzes pages directly from a list of in-memory Report objects.
-
-    This is the "live" analysis mode. It sends the pages to the AI for summarization.
 
     Args:
         reports:  A list of parsed Report objects.
@@ -109,9 +105,6 @@ async def analyze_measures_from_file(
     """
     Analyzes measures from a previously exported Excel file.
 
-    This is the "retrospective" analysis mode. It reads a measure report,
-    finds rows where the 'Description' is empty, and uses the AI to fill them in.
-
     Args:
         file_path: The path to the measure report Excel file.
         provider:  LLM backend to use – ``"gemini"`` (default) or ``"openai"``.
@@ -127,18 +120,17 @@ async def analyze_measures_from_file(
     else:
         raise ValueError(f"Unsupported file type: {file_path.suffix}")
 
-    df['Description'] = df['Description'].fillna('')
-
+    df["Description"] = df["Description"].fillna("")
     model = _get_model(provider)
 
-    for report_name, report_df in df.groupby('Report'):
-        measures_to_process = report_df[report_df['Description'] == '']
+    for report_name, report_df in df.groupby("Report"):
+        measures_to_process = report_df[report_df["Description"] == ""]
         if measures_to_process.empty:
             print(f"Report '{report_name}': No measures needing analysis.")
             continue
 
         measures_for_ai = [
-            {"name": f"{row['Table']}[{row['Measure Name']}]", "expression": row['Expression']}
+            {"name": f"{row['Table']}[{row['Measure Name']}]", "expression": row["Expression"]}
             for _, row in measures_to_process.iterrows()
         ]
 
@@ -146,12 +138,10 @@ async def analyze_measures_from_file(
         descriptions = await model.process_all_measures(measures_for_ai)
         print(f"Report '{report_name}': Successfully generated descriptions for {len(descriptions)} measures.")
 
-        description_map = {name: desc for name, desc in descriptions.items()}
-
         for index, row in measures_to_process.iterrows():
             measure_full_name = f"{row['Table']}[{row['Measure Name']}]"
-            if measure_full_name in description_map:
-                df.loc[index, 'Description'] = description_map[measure_full_name]
+            if measure_full_name in descriptions:
+                df.loc[index, "Description"] = descriptions[measure_full_name]
 
     return df
 
@@ -162,9 +152,6 @@ async def analyze_pages_from_file(
 ) -> pd.DataFrame:
     """
     Analyzes pages from a previously exported Excel file.
-
-    This is the "retrospective" analysis mode. It reads a page report and uses
-    the AI to fill in Descriptions.
 
     Args:
         file_path: The path to the page report Excel file.
@@ -181,13 +168,13 @@ async def analyze_pages_from_file(
     else:
         raise ValueError(f"Unsupported file type: {file_path.suffix}")
 
-    df['Description'] = ""
+    df["Description"] = ""
     model = _get_model(provider)
 
-    for report_name, report_df in df.groupby('Report'):
+    for report_name, report_df in df.groupby("Report"):
         pages_for_ai = [
             {
-                "name": row['Page Name'],
+                "name": row["Page Name"],
                 "visual_titles": row["All Visual Titles"],
                 "used_fields": row["All Used Fields (Raw)"],
                 "measures": row["Used Measures"],
@@ -202,7 +189,7 @@ async def analyze_pages_from_file(
         for index, row in report_df.iterrows():
             page_full_name = f"{report_name}[{row['Page Name']}]"
             if page_full_name in descriptions:
-                df.loc[index, 'Description'] = descriptions[page_full_name]
+                df.loc[index, "Description"] = descriptions[page_full_name]
 
     return df
 

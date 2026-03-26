@@ -5,8 +5,8 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pbi_insights.measure import Measure
-    from pbi_insights.page import Page
+    from pbi_insights.domain.measure import Measure
+    from pbi_insights.domain.page import Page
 
 
 class BaseModel(ABC):

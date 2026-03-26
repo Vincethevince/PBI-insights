@@ -1,13 +1,15 @@
 from __future__ import annotations
 import json
+import re
 from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 from pathlib import Path
-import re
+
 from .page import Page
 from .measure import Measure, UsageState
 
 if TYPE_CHECKING:
     from .page import Page
+
 
 class Report:
     """Represents a Power BI report, parsed from its unzipped file structure."""
@@ -27,8 +29,8 @@ class Report:
         config_str: Optional[str] = layout_data.get("config")
         self.config: Dict[str, Any] = json.loads(config_str) if config_str else {}
 
-        self.bookmarks: List[Dict] = self.config.get("bookmarks",[]) # Not used in any way for now
-        self.modelExtension: List[Dict] = self.config.get("modelExtensions",[])
+        self.bookmarks: List[Dict] = self.config.get("bookmarks", [])
+        self.modelExtension: List[Dict] = self.config.get("modelExtensions", [])
 
         global_filters_str: Optional[str] = layout_data.get("filters")
         self.global_filters: List[Dict[str, Any]] = json.loads(global_filters_str) if global_filters_str else []
@@ -38,7 +40,7 @@ class Report:
         self._load_pages(layout_data)
 
         # --- Contained Objects ---
-        self.measures: Dict[str,Measure] = {} # fullname: Measure object
+        self.measures: Dict[str, Measure] = {}  # fullname: Measure object
         self._load_measures()
         self._resolve_measure_dependencies()
         self._resolve_usage_dependencies()
@@ -50,7 +52,7 @@ class Report:
         self.layoutOptimization: Optional[int] = layout_data.get("layoutOptimization")
 
     @classmethod
-    def from_unzipped_report(cls, report_path: Path | str) -> 'Report':
+    def from_unzipped_report(cls, report_path: "Path | str") -> "Report":
         """
         Factory method to create a Report instance from the path to an unzipped .pbix folder.
 
@@ -87,7 +89,7 @@ class Report:
         return cls(name=report_name, layout_data=layout_data)
 
     @classmethod
-    def from_pbir_folder(cls, pbir_path: Path | str) -> 'Report':
+    def from_pbir_folder(cls, pbir_path: "Path | str") -> "Report":
         """
         Factory method to create a Report instance from a .pbir extracted folder.
 
@@ -103,7 +105,6 @@ class Report:
         if isinstance(pbir_path, str):
             pbir_path = Path(pbir_path)
 
-        # Strip '.Report' suffix from folder name to get a clean report name
         raw_name = pbir_path.name
         report_name = raw_name.removesuffix(".Report") if raw_name.endswith(".Report") else raw_name
 
@@ -114,12 +115,11 @@ class Report:
         return cls.from_definition_dir(definition_dir, report_name)
 
     @classmethod
-    def from_definition_dir(cls, definition_dir: Path, report_name: str) -> 'Report':
+    def from_definition_dir(cls, definition_dir: Path, report_name: str) -> "Report":
         """
         Factory method to create a Report instance from a definition/ directory.
 
-        This is the shared parsing path for both new-format .pbix files and .pbir folders,
-        as both expose the same definition/ directory structure.
+        This is the shared parsing path for both new-format .pbix files and .pbir folders.
 
         Args:
             definition_dir: Path to the definition/ directory.
@@ -128,7 +128,6 @@ class Report:
         Returns:
             A fully initialized Report instance.
         """
-        # Read report.json for top-level config (theme, filters, resource packages)
         report_json_path = definition_dir / "report.json"
         if not report_json_path.exists():
             raise FileNotFoundError(f"report.json not found in definition directory: {definition_dir}")
@@ -139,7 +138,6 @@ class Report:
         except (json.JSONDecodeError, OSError) as e:
             raise ValueError(f"Error reading report.json for '{report_name}': {e}") from e
 
-        # Read reportExtensions.json for measures
         extensions_data: Dict[str, Any] = {}
         extensions_path = definition_dir / "reportExtensions.json"
         if extensions_path.exists():
@@ -149,14 +147,11 @@ class Report:
             except (json.JSONDecodeError, OSError) as e:
                 print(f"Warning: Could not read reportExtensions.json for '{report_name}': {e}")
 
-        # Build a synthetic layout_data so the existing __init__ still works for
-        # attributes it reads from layout_data (config, bookmarks, etc.)
-        # Pages and measures are loaded via the definition-specific helpers below.
         layout_data: Dict[str, Any] = {
-            "sections": [],   # pages are loaded separately
+            "sections": [],
             "config": json.dumps({
                 "bookmarks": report_json.get("bookmarks", []),
-                "modelExtensions": [],  # measures loaded separately
+                "modelExtensions": [],
             }),
             "filters": json.dumps(report_json.get("filterConfig", {}).get("filters", [])),
             "resourcePackages": report_json.get("resourcePackages"),
@@ -164,18 +159,15 @@ class Report:
 
         instance = cls(name=report_name, layout_data=layout_data)
 
-        # Override pages with definition-format pages
         instance.pages = []
         pages_dir = definition_dir / "pages"
         if pages_dir.exists():
             instance._load_pages_from_definition(pages_dir)
 
-        # Override measures with definition-format measures
         instance.measures = {}
         if extensions_data:
             instance._load_measures_from_extensions(extensions_data)
 
-        # Re-run dependency / usage resolution with the newly loaded data
         instance._resolve_measure_dependencies()
         instance._resolve_usage_dependencies()
         instance._resolve_measure_usage_states()
@@ -185,11 +177,7 @@ class Report:
     def _load_pages_from_definition(self, pages_dir: Path):
         """
         Loads pages from the definition/pages/ directory structure.
-
-        Reads pages.json for display order, then loads each page sub-directory's
-        page.json and visuals/ folder via Page.from_definition().
         """
-        # Determine page order from pages.json (index = ordinal)
         page_order: List[str] = []
         pages_json_path = pages_dir / "pages.json"
         if pages_json_path.exists():
@@ -199,7 +187,6 @@ class Report:
             except (json.JSONDecodeError, OSError) as e:
                 print(f"Warning: Could not read pages.json for '{self.name}': {e}")
 
-        # Build a lookup from page-id → ordinal
         ordinal_map: Dict[str, int] = {page_id: idx for idx, page_id in enumerate(page_order)}
 
         for page_dir in pages_dir.iterdir():
@@ -217,15 +204,11 @@ class Report:
             except (json.JSONDecodeError, OSError) as e:
                 print(f"Warning: Could not parse page '{page_dir.name}' in '{self.name}': {e}")
 
-        # Sort pages by their ordinal so they appear in the correct display order
         self.pages.sort(key=lambda p: p.ordinal if p.ordinal is not None else 9999)
 
     def _load_measures_from_extensions(self, extensions_data: Dict[str, Any]):
         """
         Loads measures from parsed reportExtensions.json data.
-
-        The structure is identical to the old modelExtensions entries embedded in
-        the Layout config, so the same parsing logic applies.
         """
         all_entities = extensions_data.get("entities", [])
 
@@ -238,7 +221,6 @@ class Report:
                 expression = measure["expression"]
                 new_measure = Measure(name, entity_name, expression, self)
 
-                # Parse optional author/description/last_change comments
                 comment = re.search(r"/\*.*? Author:.*?\*/", expression, re.DOTALL)
                 if comment is not None:
                     comment = comment.group()
@@ -252,7 +234,6 @@ class Report:
                     if last_change_match is not None:
                         new_measure.last_change = last_change_match.group(1)
 
-                # Collect explicit measure references
                 references = set(result.strip() for result in re.findall(r"[a-zA-Z0-9_ '\"]+\[[a-zA-ZΑ-Ωα-ω0-9_ &]*]{1}", expression))
 
                 if "references" in measure:
@@ -263,9 +244,7 @@ class Report:
                 self.measures[new_measure.full_name] = new_measure
 
     def _load_pages(self, layout_data: Dict[str, Any]):
-        """
-        Parses the 'sections' (pages) from the layout data and populates self.pages.
-        """
+        """Parses the 'sections' (pages) from the layout data and populates self.pages."""
         page_sections = layout_data.get("sections", [])
         for section_data in page_sections:
             page = Page(section_data, self)
@@ -273,32 +252,30 @@ class Report:
 
     def _load_measures(self):
         """
-        This converts all measures found inside the report data into Measure objects and binds them to the report.
-        The comment part is optional or to be seen as a recommendation to make life easier for yourself.
-        Comment to be put in the measure looks like:
+        Converts all measures found inside the report data into Measure objects.
+
+        The comment block in a measure expression is optional:
         /*
         * Author: John Doe
         * Description: This measure calculates the Sales per Month
         * Last change: 2025/10/23
         */
         """
-
         if not self.modelExtension:
             return
 
         all_entities = self.modelExtension[0]["entities"]
 
         for entity in all_entities:
-            entity_name = entity.get("name","Unknown")
-            all_measures = entity.get("measures",[])
+            entity_name = entity.get("name", "Unknown")
+            all_measures = entity.get("measures", [])
 
             for measure in all_measures:
                 name = measure["name"]
                 expression = measure["expression"]
                 new_measure = Measure(name, entity_name, expression, self)
 
-                # If you don't put comments like described above in your measures, you can ignore this.
-                comment = re.search("/\*.*? Author:.*?\*/", expression, re.DOTALL)
+                comment = re.search(r"/\*.*? Author:.*?\*/", expression, re.DOTALL)
                 if comment is not None:
                     comment = comment.group()
                     author_match = re.search(r"Author: ([a-zA-Z ]*)", comment, re.DOTALL)
@@ -307,16 +284,12 @@ class Report:
                     description_match = re.search(r'Description: ([a-zA-Z0-9 .\-"]*)', comment)
                     if description_match is not None:
                         new_measure.description = description_match.group(1)
-
                     last_change_match = re.search(r"Last change: ([0-9./-]*)", comment)
                     if last_change_match is not None:
                         new_measure.last_change = last_change_match.group(1)
 
-                # This searches for all other measures like Sales[Amount], entity[name]
-                references = set(result.strip() for result in re.findall("[a-zA-Z0-9_ '\"]+\[[a-zA-ZΑ-Ωα-ω0-9_ &]*]{1}", expression))
+                references = set(result.strip() for result in re.findall(r"[a-zA-Z0-9_ '\"]+\[[a-zA-ZΑ-Ωα-ω0-9_ &]*]{1}", expression))
 
-                # Sometimes, a measure expression looks like "DIVIDE([Measure 1], [Measure 2])"
-                # In this case, the measure.references keep the real names
                 if "references" in measure:
                     if "measures" in measure["references"]:
                         references.update(set(f'{ref["entity"]}[{ref["name"]}]' for ref in measure["references"]["measures"]))
@@ -325,29 +298,16 @@ class Report:
                 self.measures[new_measure.full_name] = new_measure
 
     def _resolve_measure_dependencies(self):
-        """
-        Iterates through all measures to build the bi-directional dependency graph.
-
-        This method populates the `referenced_by_measures` set for each measure.
-        """
+        """Builds the bi-directional dependency graph for measures."""
         for measure in self.measures.values():
             for referenced_name in measure.referenced_measures:
-                # Find the measure object that is being referenced
                 referenced_measure = self.measures.get(referenced_name)
                 if referenced_measure:
-                    # Add this measure to the dependents of the referenced measure
                     referenced_measure.referenced_by_measures.add(measure)
 
     def _resolve_usage_dependencies(self):
-        """
-        Links visuals and pages to the measures they use.
-
-        This method iterates through all pages and their visuals, using the
-        `used_fields` set to look up measures in the central `self.measures`
-        dictionary and build the bi-directional relationships.
-        """
+        """Links visuals and pages to the measures they use."""
         for page in self.pages:
-            # Link page-level filters to measures
             for field_name in page.used_fields:
                 measure = self.measures.get(field_name)
                 if measure:
@@ -356,15 +316,11 @@ class Report:
                     measure.usage_state = UsageState.DIRECTLY_USED
 
     def _resolve_measure_usage_states(self):
-        """
-        Calculates the final usage state for all measures by traversing the dependency graph.
-        """
-        # Propagate the 'INDIRECTLY_USED' state up the dependency chain
+        """Calculates the final usage state for all measures."""
         for measure in self.measures.values():
             if measure.usage_state == UsageState.DIRECTLY_USED:
                 self._propagate_indirect_usage(measure)
 
-        # Identify 'DANGLING' measures
         for measure in self.measures.values():
             if measure.usage_state == UsageState.UNREFERENCED:
                 if measure.referenced_by_measures:
@@ -373,11 +329,9 @@ class Report:
     def _propagate_indirect_usage(self, measure: Measure):
         """
         Recursively sets the usage state of parent measures to INDIRECTLY_USED.
-        Example: If Measure A is used, Measure B is not used and A's formula is `SUM(Measure B)`,
-        this function will mark Measure B as INDIRECTLY_USED.
 
         Args:
-            Measure: The (in-)directly used parent measure.
+            measure: The (in-)directly used parent measure.
         """
         for referenced_name in measure.referenced_measures:
             referenced_measure = self.measures.get(referenced_name)
@@ -387,8 +341,6 @@ class Report:
                     self._propagate_indirect_usage(referenced_measure)
 
     def __repr__(self) -> str:
-        """
-        Provides a developer-friendly string representation of the Report object.
-        """
         return f"Report(name='{self.name}', pages={len(self.pages)})"
+
 

@@ -2,7 +2,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any, Set, List, TYPE_CHECKING
-from .utils import _recursive_find_fields
+
+from pbi_insights.parsing.utils import _recursive_find_fields
 
 if TYPE_CHECKING:
     from .page import Page
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
 class Visual:
     """Represents a single visual on a Power BI report page."""
 
-    def __init__(self, container: Dict[str, Any], page: Page):
+    def __init__(self, container: Dict[str, Any], page: "Page"):
         """
         Initializes a Visual object from its JSON container.
 
@@ -36,18 +37,16 @@ class Visual:
         self.config: Dict[str, Any] = json.loads(config_str) if config_str else {}
 
         filters_str: Optional[str] = container.get("filters")
-        self.filters: List[Dict[str,Any]] = json.loads(filters_str) if filters_str else []
+        self.filters: List[Dict[str, Any]] = json.loads(filters_str) if filters_str else []
 
         data_transforms_str: Optional[str] = container.get("dataTransforms")
         self.data_transforms: Dict[str, Any] = json.loads(data_transforms_str) if data_transforms_str else {}
 
-        self.singleVisual: Dict[str, Any] = self.config.get("singleVisual",{})
+        self.singleVisual: Dict[str, Any] = self.config.get("singleVisual", {})
 
         # --- Parsed Information (to be populated later) ---
         self.id: str = self.config.get("name", "")
         self.type: str = self.singleVisual.get("visualType", "Unknown")
-        #self.used_measures: Set[Measure] = set()
-        #self.used_columns: Set['CalculatedColumn'] = set()
         self.used_fields: Set[str] = set()
         self._find_used_fields()
         self._find_title()
@@ -64,18 +63,16 @@ class Visual:
             self.used_fields.update(_recursive_find_fields(self.singleVisual))
 
     def _find_title(self):
-        """Searches for the visual title"""
+        """Searches for the visual title."""
         try:
             vcObjects = self.singleVisual.get("vcObjects", {})
-            title = vcObjects.get("title",[])
-            self.title = title[0].get("properties",{}).get("text",{}).get("expr",{}).get("Literal",{}).get("Value","")
-
-
-        except:
+            title = vcObjects.get("title", [])
+            self.title = title[0].get("properties", {}).get("text", {}).get("expr", {}).get("Literal", {}).get("Value", "")
+        except Exception:
             return
 
     @classmethod
-    def from_definition(cls, visual_json: Dict[str, Any], page: Page) -> 'Visual':
+    def from_definition(cls, visual_json: Dict[str, Any], page: "Page") -> "Visual":
         """
         Factory method to create a Visual instance from a parsed visual.json (definition format).
 
@@ -118,8 +115,6 @@ class Visual:
         instance.used_fields: Set[str] = set()
         query_state = visual_node.get("query", {}).get("queryState", {})
         if query_state:
-            # queryState maps role-name -> {"projections": [...], ...}
-            # Flatten to role -> list so _projections_fields (old-format dict branch) handles it
             projections_by_role = {
                 role: role_data.get("projections", [])
                 for role, role_data in query_state.items()
@@ -131,8 +126,6 @@ class Visual:
             instance.used_fields.update(_recursive_find_fields(instance.filters))
 
         # Scan the visual's formatting objects for extra field references
-        # (e.g. xAxisReferenceLine values referencing measures) — but NOT the
-        # queryState again, to avoid double-processing projections lists.
         objects_node = visual_node.get("objects", {})
         if objects_node:
             instance.used_fields.update(_recursive_find_fields(objects_node))
@@ -153,5 +146,4 @@ class Visual:
 
     def __repr__(self) -> str:
         return f"Visual(id='{self.id}', type='{self.type}', page='{self.page.name}')"
-
 

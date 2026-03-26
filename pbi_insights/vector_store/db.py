@@ -1,3 +1,4 @@
+"""Vector DB backends (ChromaDB + FAISS) with hybrid semantic + keyword search."""
 import os
 import hashlib
 from abc import ABC, abstractmethod
@@ -68,7 +69,7 @@ def _build_embedding_function(provider: EmbeddingProvider = "gemini"):
             return VertexAIEmbeddings(
                 model_name="text-embedding-005", project=gcp_project
             )
-        print("  [vector_db] GCP_PROJECT not set – falling back to local embeddings.")
+        print("  [vector_store] GCP_PROJECT not set – falling back to local embeddings.")
 
     # "local" (or gemini fallback)
     return SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
@@ -90,8 +91,7 @@ def _load_dataframe(report_file: Path, include_hidden: bool = False) -> pd.DataF
 
     Args:
         report_file: Path to an Excel or CSV page report.
-        include_hidden: If False (default), rows where 'Is Visible' is False
-                        are dropped before building the vector store.
+        include_hidden: If False (default), rows where 'Is Visible' is False are dropped.
 
     Returns:
         Filtered DataFrame ready for embedding.
@@ -103,14 +103,12 @@ def _load_dataframe(report_file: Path, include_hidden: bool = False) -> pd.DataF
     else:
         raise ValueError(f"Unsupported file type: {report_file.suffix}")
 
-    # Drop pages without a description — they can't be embedded
     df.dropna(subset=["Description"], inplace=True)
     df = df[df["Description"].str.strip() != ""]
 
-    # Optionally exclude hidden pages
     if not include_hidden and "Is Visible" in df.columns:
         before = len(df)
-        df = df[df["Is Visible"] != False]  # noqa: E712  (handles bool & string)
+        df = df[df["Is Visible"] != False]  # noqa: E712
         dropped = before - len(df)
         if dropped:
             print(f"  Excluded {dropped} hidden page(s). Pass --include-hidden to keep them.")
@@ -190,12 +188,6 @@ class ChromaVectorDB(BaseVectorDB):
         db_path: Optional[Path] = None,
         embedding_provider: EmbeddingProvider = "gemini",
     ):
-        """
-        Args:
-            db_path:            Directory for the persistent Chroma store.
-            embedding_provider: Which embeddings to use – ``"gemini"`` (default),
-                                ``"openai"``, or ``"local"``.
-        """
         if db_path:
             self.client = chromadb.PersistentClient(path=str(db_path))
         else:
@@ -203,7 +195,6 @@ class ChromaVectorDB(BaseVectorDB):
 
         self.embedding_function = _build_embedding_function(embedding_provider)
 
-        # Chroma-native EF used only for collection creation (local / fallback only)
         self._chroma_ef = None
         if embedding_provider == "local" or (
             embedding_provider == "gemini" and not os.getenv("GCP_PROJECT")
@@ -223,11 +214,6 @@ class ChromaVectorDB(BaseVectorDB):
 
         Documents are upserted by a stable MD5 ID so running the command twice
         on the same file never creates duplicate entries.
-
-        Args:
-            report_file:      Path to the Excel or CSV page report.
-            collection_name:  Chroma collection name.
-            include_hidden:   When False, hidden pages are excluded from the store.
         """
         print(f"\n--- Building ChromaDB from {report_file.name} ---")
         df = _load_dataframe(report_file, include_hidden=include_hidden)
@@ -245,11 +231,10 @@ class ChromaVectorDB(BaseVectorDB):
             embedding_function=self.embedding_function,
         )
 
-        # Upsert in batches of 250 (Vertex AI API limit)
         batch_size = 250
         for i in range(0, len(documents), batch_size):
-            batch_docs = documents[i : i + batch_size]
-            batch_ids = ids[i : i + batch_size]
+            batch_docs = documents[i: i + batch_size]
+            batch_ids = ids[i: i + batch_size]
             print(f"  Upserting batch {i // batch_size + 1} ({len(batch_docs)} docs)...")
             vector_store.add_documents(documents=batch_docs, ids=batch_ids)
 
@@ -261,17 +246,7 @@ class ChromaVectorDB(BaseVectorDB):
         collection_name: str = "pbi_pages",
         top_k: int = 5,
     ) -> list[Document]:
-        """
-        Queries the ChromaDB collection using hybrid search (semantic + BM25 keyword).
-
-        Args:
-            query:           Natural-language search string.
-            collection_name: Chroma collection to search.
-            top_k:           Number of results to return per retriever.
-
-        Returns:
-            Ranked list of Document objects.
-        """
+        """Queries the ChromaDB collection using hybrid search (semantic + BM25 keyword)."""
         print(f"\n--- Querying ChromaDB for: '{query}' ---")
 
         vector_store = Chroma(
@@ -281,7 +256,6 @@ class ChromaVectorDB(BaseVectorDB):
         )
         embedding_retriever = vector_store.as_retriever(search_kwargs={"k": top_k})
 
-        # Load all docs for BM25 keyword retriever
         collection = self.client.get_collection(name=collection_name)
         all_docs_data = collection.get(include=["metadatas", "documents"])
         all_docs = [
@@ -306,24 +280,13 @@ class ChromaVectorDB(BaseVectorDB):
 # ---------------------------------------------------------------------------
 
 class FaissVectorDB(BaseVectorDB):
-    """
-    Vector DB backend backed by FAISS (pure local, no server required).
-
-    The index is saved to / loaded from  <db_path>/<collection_name>/  on disk
-    so it survives restarts.
-    """
+    """Vector DB backend backed by FAISS (pure local, no server required)."""
 
     def __init__(
         self,
         db_path: Optional[Path] = None,
         embedding_provider: EmbeddingProvider = "gemini",
     ):
-        """
-        Args:
-            db_path:            Root directory for persisting the FAISS index.
-            embedding_provider: Which embeddings to use – ``"gemini"`` (default),
-                                ``"openai"``, or ``"local"``.
-        """
         self.db_path = db_path or Path.cwd() / "vector_db"
         self.db_path.mkdir(parents=True, exist_ok=True)
         self.embedding_function = _build_embedding_function(embedding_provider)
@@ -337,14 +300,7 @@ class FaissVectorDB(BaseVectorDB):
         collection_name: str = "pbi_pages",
         include_hidden: bool = False,
     ) -> None:
-        """
-        Builds (or rebuilds) a FAISS index from a page report file.
-
-        Args:
-            report_file:     Path to the Excel or CSV page report.
-            collection_name: Sub-directory name for the saved index.
-            include_hidden:  When False, hidden pages are excluded.
-        """
+        """Builds (or rebuilds) a FAISS index from a page report file."""
         print(f"\n--- Building FAISS index from {report_file.name} ---")
         df = _load_dataframe(report_file, include_hidden=include_hidden)
 
@@ -366,17 +322,7 @@ class FaissVectorDB(BaseVectorDB):
         collection_name: str = "pbi_pages",
         top_k: int = 5,
     ) -> list[Document]:
-        """
-        Queries a persisted FAISS index using hybrid search (semantic + BM25).
-
-        Args:
-            query:           Natural-language search string.
-            collection_name: Sub-directory name of the saved index.
-            top_k:           Number of results to return per retriever.
-
-        Returns:
-            Ranked list of Document objects.
-        """
+        """Queries a persisted FAISS index using hybrid search (semantic + BM25)."""
         print(f"\n--- Querying FAISS for: '{query}' ---")
         index_path = self._index_path(collection_name)
 
@@ -393,7 +339,6 @@ class FaissVectorDB(BaseVectorDB):
         )
         embedding_retriever = vector_store.as_retriever(search_kwargs={"k": top_k})
 
-        # Load all docs for BM25 — iterate via the public index-to-docstore-id mapping
         all_docs = [
             vector_store.docstore.search(doc_id)
             for doc_id in vector_store.index_to_docstore_id.values()
@@ -430,8 +375,7 @@ class VectorDBFactory:
         Args:
             backend:            Which store to use (CHROMA or FAISS).
             db_path:            Root directory for persisting the index/store.
-            embedding_provider: Which embedding model to use –
-                                ``"gemini"`` (default), ``"openai"``, or ``"local"``.
+            embedding_provider: Which embedding model to use.
 
         Returns:
             A BaseVectorDB instance.
@@ -443,27 +387,3 @@ class VectorDBFactory:
         else:
             raise ValueError(f"Unknown backend: {backend}")
 
-
-# ---------------------------------------------------------------------------
-# Legacy alias — keeps any existing code that imported `VectorDB` working
-# ---------------------------------------------------------------------------
-
-VectorDB = ChromaVectorDB
-
-
-# ---------------------------------------------------------------------------
-# Quick manual test
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    db_path = Path(__file__).parent.parent / "vector_db"
-    db = VectorDBFactory.create(backend=VectorDBBackend.CHROMA, db_path=db_path)
-
-    file_path = Path(__file__).parent.parent / "output" / "pages_2026-03-25_10-00-00_enhanced.xlsx"
-    db.create_pagedb_from_file(report_file=file_path, include_hidden=False)
-
-    print("\n--- QUERYING ---")
-    results = db.query_pages(query="delayed items")
-    for entry in format_results(results):
-        print(f"\n[{entry['rank']}] {entry['report']} / {entry['page']}")
-        print(f"    {entry['description']}")
